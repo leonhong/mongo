@@ -6,7 +6,10 @@ License: AGPL 3.0
 URL: http://www.mongodb.org
 Group: Applications/Databases
 
-Source0: %{name}-%{version}.tar.gz
+Source0: http://downloads.mongodb.org/src/mongodb-src-r%{version}.tar.gz
+Source1: mongod.conf
+Source2: init.d-mongod
+Source3: mongod.sysconfig
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 BuildRequires: js-devel, readline-devel, boost-devel, pcre-devel
 BuildRequires: gcc-c++, scons
@@ -42,7 +45,7 @@ This package provides the mongo static library and header files needed
 to develop mongo client software.
 
 %prep
-%setup
+%setup -q -n mongodb-src-r%{version}
 
 %build
 scons --prefix=$RPM_BUILD_ROOT/usr all
