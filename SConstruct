@@ -1010,7 +1010,12 @@ def doConfigure( myenv , needPcre=True , shell=False ):
             myCheckLib( "ncurses" , staticOnly=release )
             myCheckLib( "tinfo" , staticOnly=release )
         else:
-            print( "\n*** warning: no readline library, mongo shell will not have nice interactive line editing ***\n" )
+            # Failed to link readline, try linking with ncurses first (fixes build on CentOS 5.5)
+            if linux and myCheckLib( "ncurses" , staticOnly=release ) and myCheckLib( "readline" , release and nix , staticOnly=release):
+                myenv.Append( CPPDEFINES=[ "USE_READLINE" ] )
+                myCheckLib( "tinfo" , staticOnly=release )
+            else:
+                print( "\n*** warning: no readline library, mongo shell will not have nice interactive line editing ***\n" )
 
         if linux:
             myCheckLib( "rt" , True )

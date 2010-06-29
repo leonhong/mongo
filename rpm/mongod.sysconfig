@@ -1,1 +1,18 @@
-# TODO: add relevant configuration stuff here.
+# 
+# MongoDB sysconfig
+#
+
+# Maximum number of open files (passed to ulimit -n)
+NFILES=12000
+
+# Run as this user
+USER="mongod"
+
+# Where the pid file should be located
+PIDFILE="/var/lib/mongo/mongod.lock"
+
+# Override location of mongo daemon
+# MONGOD="/usr/local/bin/mongo"
+
+# Override options here
+# OPTIONS="$OPTIONS"

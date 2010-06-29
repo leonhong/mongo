@@ -12,31 +12,39 @@
 
 # things from mongod.conf get there by mongod reading it
 
-
-
-OPTIONS=" -f /etc/mongod.conf"
-SYSCONFIG="/etc/sysconfig/mongod"
-
+# Default options
 mongod=${MONGOD-/usr/bin/mongod}
+OPTIONS="-f /etc/mongo/mongod.conf"
+NFILES=12000
 
-MONGO_USER=mongod
-MONGO_GROUP=mongod
+# Source sysconfig if it is present
+if [ -f /etc/sysconfig/mongod ]; then
+   . /etc/sysconfig/mongod
+fi
 
-. "$SYSCONFIG" || true
+check_old_conf() {
+  if [ -f /etc/mongod.conf ]; then
+    echo "*** NOTICE ***"
+    echo "Found configuration file in /etc/mongod.conf"
+    echo "The default location in the current package is /etc/mongo/mongod.conf"
+    echo "Please copy the configuration into the new location"
+    RETVAL=1
+  fi
+}
 
 start()
 {
   echo -n $"Starting mongod: "
-  daemon --user "$MONGO_USER" $mongod $OPTIONS
+  ulimit -n ${NFILES:-12000}
+  daemon --user "$USER" "$mongod" $OPTIONS
   RETVAL=$?
-  echo
   [ $RETVAL -eq 0 ] && touch /var/lock/subsys/mongod
 }
 
 stop()
 {
   echo -n $"Stopping mongod: "
-  killproc -p /var/lib/mongo/mongod.lock -t30 -TERM /usr/bin/mongod
+  killproc -p $PIDFILE -t30 -TERM $mongod
   RETVAL=$?
   echo
   [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/mongod
@@ -47,7 +55,6 @@ restart () {
 	start
 }
 
-ulimit -n 12000
 RETVAL=0
 
 case "$1" in
@@ -64,10 +71,14 @@ case "$1" in
     [ -f /var/lock/subsys/mongodb ] && restart || :
     ;;
   status)
-    status $mongod
+    status -p $PIDFILE $mongod
+	  RETVAL=$?
+    ;;
+  configtest)
+    check_old_conf
     ;;
   *)
-    echo "Usage: $0 {start|stop|status|restart|reload|force-reload|condrestart}"
+    echo "Usage: $0 {start|stop|status|restart|reload|force-reload|condrestart|configtest}"
     RETVAL=1
 esac
 

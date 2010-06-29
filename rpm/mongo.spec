@@ -12,7 +12,8 @@ Source2: init.d-mongod
 Source3: mongod.sysconfig
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 BuildRequires: js-devel, readline-devel, boost-devel, pcre-devel
-BuildRequires: gcc-c++, scons
+BuildRequires: gcc-c++, scons, libstdc++-devel, ncurses-devel
+Requires: js, boost, pcre, readline, libstdc++, readline, ncurses
 
 %description
 Mongo (from "huMONGOus") is a schema-free document-oriented database.
@@ -48,27 +49,29 @@ to develop mongo client software.
 %setup -q -n mongodb-src-r%{version}
 
 %build
-scons --prefix=$RPM_BUILD_ROOT/usr all
+[ "%{buildroot}" != "/" ] && %{__rm} -rf %{buildroot}
+
+scons all
 # XXX really should have shared library here
 
 %install
-scons --prefix=$RPM_BUILD_ROOT/usr install
-mkdir -p $RPM_BUILD_ROOT/usr/share/man/man1
-cp debian/*.1 $RPM_BUILD_ROOT/usr/share/man/man1/
-mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
-cp rpm/init.d-mongod $RPM_BUILD_ROOT/etc/rc.d/init.d/mongod
-chmod a+x $RPM_BUILD_ROOT/etc/rc.d/init.d/mongod
-mkdir -p $RPM_BUILD_ROOT/etc
-cp rpm/mongod.conf $RPM_BUILD_ROOT/etc/mongod.conf
-mkdir -p $RPM_BUILD_ROOT/etc/sysconfig
-cp rpm/mongod.sysconfig $RPM_BUILD_ROOT/etc/sysconfig/mongod
-mkdir -p $RPM_BUILD_ROOT/var/lib/mongo
-mkdir -p $RPM_BUILD_ROOT/var/log/mongo
-touch $RPM_BUILD_ROOT/var/log/mongo/mongod.log
+scons --prefix=%{buildroot}/%{_prefix} install
+
+%{__mkdir_p} %{buildroot}/%{_datadir}/man/man1
+%{__mkdir_p} %{buildroot}/%{_initrddir}
+%{__mkdir_p} %{buildroot}/%{_sysconfdir}/sysconfig
+%{__mkdir_p} %{buildroot}/%{_sysconfdir}/mongo
+%{__mkdir_p} %{buildroot}/%{_var}/lib/mongo
+%{__mkdir_p} %{buildroot}/%{_var}/log/mongo
+
+%{__cp} debian/*.1 %{buildroot}/%{_datadir}/man/man1/
+%{__cp} rpm/init.d-mongod %{buildroot}/%{_initrddir}/mongod
+%{__cp} rpm/mongod.conf %{buildroot}/%{_sysconfdir}/mongo/mongod.conf
+%{__cp} rpm/mongod.sysconfig %{buildroot}/%{_sysconfdir}/sysconfig/mongod
 
 %clean
-scons -c
-rm -rf $RPM_BUILD_ROOT
+# scons -c
+# [ "%{buildroot}" != "/" ] && %{__rm} -rf %{buildroot}
 
 %pre server
 if ! /usr/bin/id -g mongod &>/dev/null; then
@@ -82,7 +85,7 @@ fi
 %post server
 if test $1 = 1
 then
-  /sbin/chkconfig --add mongod
+  /sbin/chkconfig mongod on
 fi
 
 %preun server
@@ -101,13 +104,13 @@ fi
 %defattr(-,root,root,-)
 %doc README GNU-AGPL-3.0.txt
 
-%{_bindir}/mongo
-%{_bindir}/mongodump
-%{_bindir}/mongoexport
-%{_bindir}/mongofiles
-%{_bindir}/mongoimport
-%{_bindir}/mongorestore
-%{_bindir}/mongostat
+%attr(0755,root,root) %{_bindir}/mongo
+%attr(0755,root,root) %{_bindir}/mongodump
+%attr(0755,root,root) %{_bindir}/mongoexport
+%attr(0755,root,root) %{_bindir}/mongofiles
+%attr(0755,root,root) %{_bindir}/mongoimport
+%attr(0755,root,root) %{_bindir}/mongorestore
+%attr(0755,root,root) %{_bindir}/mongostat
 
 %{_mandir}/man1/mongo.1*
 %{_mandir}/man1/mongod.1*
@@ -121,24 +124,32 @@ fi
 
 %files server
 %defattr(-,root,root,-)
-%config(noreplace) /etc/mongod.conf
-%{_bindir}/mongod
-%{_bindir}/mongos
-#%{_mandir}/man1/mongod.1*
+
+%dir %{_sysconfdir}/mongo
+%config(noreplace) %{_sysconfdir}/mongo/mongod.conf
+
+%attr(0755,root,root) %{_bindir}/mongod
+%attr(0755,root,root) %{_bindir}/mongos
+%attr(0755,root,root) %{_sysconfdir}/rc.d/init.d/mongod
+
 %{_mandir}/man1/mongos.1*
-/etc/rc.d/init.d/mongod
-/etc/sysconfig/mongod
-#/etc/rc.d/init.d/mongos
-%attr(0755,mongod,mongod) %dir /var/lib/mongo
-%attr(0755,mongod,mongod) %dir /var/log/mongo
-%attr(0640,mongod,mongod) %config(noreplace) %verify(not md5 size mtime) /var/log/mongo/mongod.log
+%{_sysconfdir}/sysconfig/mongod
+
+%attr(0750,mongod,mongod) %dir %{_var}/lib/mongo
+%attr(0750,mongod,mongod) %dir %{_var}/log/mongo
 
 %files devel
-/usr/include/mongo
+%{_includedir}/mongo
 %{_libdir}/libmongoclient.a
 #%{_libdir}/libmongotestfiles.a
 
 %changelog
+* Tue Jun 29 2010 Mikko Koppanen <mikko@ibuildings.com>
+- Use macros for commands and directories
+- Add missing source files
+- Added explicit attributes for binaries
+- Changed default config location to /etc/mongo/mongod.conf
+
 * Thu Jan 28 2010 Richard M Kreuter <richard@10gen.com>
 - Minor fixes.
 
