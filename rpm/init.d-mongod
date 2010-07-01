@@ -40,8 +40,8 @@ stop()
 }
 
 restart () {
-	stop
-	start
+  stop
+  start
 }
 
 RETVAL=0
@@ -61,7 +61,7 @@ case "$1" in
     ;;
   status)
     status -p $PIDFILE $mongod
-	  RETVAL=$?
+    RETVAL=$?
     ;;
   *)
     echo "Usage: $0 {start|stop|status|restart|reload|force-reload|condrestart}"
