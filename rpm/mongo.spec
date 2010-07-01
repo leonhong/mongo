@@ -64,10 +64,10 @@ scons --prefix=%{buildroot}/%{_prefix} install
 %{__mkdir_p} %{buildroot}/%{_var}/lib/mongo
 %{__mkdir_p} %{buildroot}/%{_var}/log/mongo
 
-%{__cp} debian/*.1 %{buildroot}/%{_datadir}/man/man1/
-%{__cp} rpm/init.d-mongod %{buildroot}/%{_initrddir}/mongod
-%{__cp} rpm/mongod.conf %{buildroot}/%{_sysconfdir}/mongo/mongod.conf
-%{__cp} rpm/mongod.sysconfig %{buildroot}/%{_sysconfdir}/sysconfig/mongod
+%{__cp} %{_sourcedir}/debian/*.1 %{buildroot}/%{_datadir}/man/man1/
+%{__cp} %{_sourcedir}/rpm/init.d-mongod %{buildroot}/%{_initrddir}/mongod
+%{__cp} %{_sourcedir}/rpm/mongod.conf %{buildroot}/%{_sysconfdir}/mongo/mongod.conf
+%{__cp} %{_sourcedir}/rpm/mongod.sysconfig %{buildroot}/%{_sysconfdir}/sysconfig/mongod
 
 %clean
 # scons -c
