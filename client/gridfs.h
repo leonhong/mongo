@@ -34,19 +34,12 @@ namespace mongo {
 
         int len(){
             int len;
-            const char * data = _data["data"].binDataClean( len );
-            int * foo = (int*)data;
-            assert( len == foo[0] );
+            _data["data"].binDataClean( len );
             return len;
         }
 
         const char * data( int & len ){
-            const char * data = _data["data"].binDataClean( len );
-            int * foo = (int*)data;
-            assert( len == foo[0] );
-
-            len = len;
-            return data;
+            return _data["data"].binDataClean( len );
         }
 
     private:
@@ -131,7 +124,7 @@ namespace mongo {
         unsigned int _chunkSize;
 
         // insert fileobject. All chunks must be in DB.
-        BSONObj insertFile(const string& name, const OID& id, unsigned length, const string& contentType);
+        BSONObj insertFile(const string& name, const OID& id, gridfs_offset length, const string& contentType);
 
         friend class GridFile;
     };

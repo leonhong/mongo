@@ -183,7 +183,7 @@ namespace mongo {
                     string s = BSONObjBuilder::numStr( num++ );
 
                     BSONObj o = cursor->next();
-                    list.append( s.c_str() , o["name"].valuestrsafe() );
+                    list.append( s.c_str() , o["_id"].valuestrsafe() );
                 }
 
                 result.appendArray("databases" , list.obj() );
@@ -351,11 +351,11 @@ namespace mongo {
                     BSONObjBuilder b; 
                     b.append( "ns" , ns ); 
                     b.appendBool( "unique" , true ); 
-                    
+
                     auto_ptr<DBClientCursor> cursor = conn->query( config->getName() + ".system.indexes" , b.obj() );
                     while ( cursor->more() ){
                         BSONObj idx = cursor->next();
-                        if ( proposedKey.uniqueAllowd( idx["key"].embeddedObjectUserCheck() ) )
+                        if ( proposedKey.isPrefixOf( idx["key"].embeddedObjectUserCheck() ) )
                             continue;
                         errmsg = (string)"can't shard collection with unique index on: " + idx.toString();
                         conn.done();
@@ -408,7 +408,7 @@ namespace mongo {
                     return false;
                 }
                 
-                result.appendTimestamp( "version" , cm->getVersion() );
+                result.appendTimestamp( "version" , cm->getVersion().toLong() );
 
                 return 1;
             }
@@ -675,14 +675,9 @@ namespace mongo {
                 help << "remove a shard to the system.";
             }
             bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
-                if ( ! cmdObj["forTestingOnly"].trueValue() ){
-                    errmsg = "removeshard not yet implemented";
-                    return false;
-                }
-
                 string shard = cmdObj["removeshard"].valuestrsafe();
                 if ( ! grid.knowAboutShard( shard ) ){
-                    errmsg = "that server isn't known to me";
+                    errmsg = "unknown shard";
                     return false;
                 }
 
@@ -706,18 +701,21 @@ namespace mongo {
                         return false;
                     }
 
-                    result.append( "started draining" , shard );
-                    conn.done();
                     Shard::reloadShardInfo();
+
+                    result.append( "msg"   , "draining started successfully" );
+                    result.append( "state" , "started" ); 
+                    result.append( "shard" , shard );
+                    conn.done();
                     return true;
                 }
 
                 // If the server has been completely drained, remove it from the ConfigDB.
                 // Check not only for chunks but also databases.
                 BSONObj shardIDDoc = BSON( "shard" << shardDoc[ "_id" ].str() );
-                unsigned long long chunkCount = conn->count( "config.chunks" , shardIDDoc );
+                long long chunkCount = conn->count( "config.chunks" , shardIDDoc );
                 BSONObj primaryDoc = BSON( "primary" << shardDoc[ "_id" ].str() );
-                unsigned long long dbCount = conn->count( "config.databases" , primaryDoc );
+                long long dbCount = conn->count( "config.databases" , primaryDoc );
                 if ( ( chunkCount == 0 ) && ( dbCount == 0 ) ){
                     log() << "going to remove shard: " << shard << endl;                    
                     conn->remove( "config.shards" , searchDoc );
@@ -728,24 +726,25 @@ namespace mongo {
                         return false;
                     }
 
-                    result.append( "shard removed" , shard );
-                    conn.done();
+                    Shard::removeShard( shardDoc[ "_id" ].str() );
                     Shard::reloadShardInfo();
+
+                    result.append( "msg"   , "removeshard completed successfully" );
+                    result.append( "state" , "completed" );
+                    result.append( "shard" , shard );
+                    conn.done();
                     return true;
                 }
 
                 // If the server is already in draining mode, just report on its progress.
                 // Report on databases (not just chunks) that are left too.
-                ostringstream os;
-                os << "already draining. ";
-                if ( chunkCount > 0 ){
-                    os << chunkCount << " chunks left. ";
-                }
-                if ( dbCount > 0 ){
-                    os << dbCount << " databases left." << endl;
-                    os << " ( Use the 'moveprimary' command to remove databases)." << endl;
-                } 
-                result.append( "msg" , os.str() );
+                result.append( "msg"  , "draining ongoing" );
+                result.append( "state" , "ongoing" );
+                BSONObjBuilder inner;
+                inner.append( "chunks" , chunkCount );
+                inner.append( "dbs" , dbCount );
+                result.append( "remaining" , inner.obj() );
+
                 conn.done();
                 return true;
             }

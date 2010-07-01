@@ -32,7 +32,7 @@
 #include "config.h"
 
 namespace mongo {
-
+    
     class DBConfig;
     class Chunk;
     class ChunkRange;
@@ -40,7 +40,50 @@ namespace mongo {
     class ChunkRangeMangager;
     class ChunkObjUnitTest;
 
-    typedef unsigned long long ShardChunkVersion;
+    struct ShardChunkVersion {
+        union {
+            struct {
+                int _minor;
+                int _major;
+            };
+            long long _combined;
+        };
+        
+        ShardChunkVersion( int major=0, int minor=0 )
+            : _minor(minor),_major(major){
+        }
+        
+        ShardChunkVersion( long long ll )
+            : _combined( ll ){
+        }
+        
+        ShardChunkVersion incMajor() const {
+            return ShardChunkVersion( _major + 1 , 0 );
+        }
+
+        void operator++(){
+            _minor++;
+        }
+
+        long long toLong() const {
+            return _combined;
+        }
+
+        bool isSet() const {
+            return _combined > 0;
+        }
+
+        string toString() const { 
+            stringstream ss; 
+            ss << _major << "|" << _minor; 
+            return ss.str(); 
+        }
+        
+        operator long long() const { return _combined; }
+        operator string() const { return toString(); }
+    };
+    //typedef unsigned long long ShardChunkVersion;
+
     typedef shared_ptr<Chunk> ChunkPtr;
 
     // key is max for each Chunk or ChunkRange
@@ -54,10 +97,11 @@ namespace mongo {
        x is in a shard iff
        min <= x < max
      */    
-    class Chunk : public Model , boost::noncopyable, public boost::enable_shared_from_this<Chunk>  {
+    class Chunk : boost::noncopyable, public boost::enable_shared_from_this<Chunk>  {
     public:
 
         Chunk( ChunkManager * info );
+        Chunk( ChunkManager * info , const BSONObj& min, const BSONObj& max, const Shard& shard);
         
         const BSONObj& getMin() const { return _min; }
         const BSONObj& getMax() const { return _max; }
@@ -120,25 +164,25 @@ namespace mongo {
 
         bool moveAndCommit( const Shard& to , string& errmsg );
 
-        virtual const char * getNS(){ return "config.chunks"; }
-        virtual void serialize(BSONObjBuilder& to);
-        virtual void unserialize(const BSONObj& from);
-        virtual string modelServer();
+        const char * getNS(){ return "config.chunks"; }
+        void serialize(BSONObjBuilder& to, ShardChunkVersion myLastMod=0);
+        void unserialize(const BSONObj& from);
+        string modelServer();
         
         void appendShortVersion( const char * name , BSONObjBuilder& b );
 
-        virtual void save( bool check=false );
-        
         void ensureIndex();
         
         void _markModified();
         
         static int MaxChunkSize;
 
+        string genID();
         static string genID( const string& ns , const BSONObj& min );
 
         const ChunkManager* getManager() const { return _manager; }
         
+        bool modified();
     private:
         
         // main shard info
@@ -146,7 +190,6 @@ namespace mongo {
         ChunkManager * _manager;
         ShardKeyPattern skey() const;
 
-        string _ns;
         BSONObj _min;
         BSONObj _max;
         Shard _shard;
@@ -257,8 +300,7 @@ namespace mongo {
             return _ns;
         }
         
-        int numChunks(){ rwlock lk( _lock , false ); return _chunks.size(); }
-        ChunkPtr getChunk( int i ){ rwlock lk( _lock , false ); return _chunks[i]; }
+        int numChunks(){ rwlock lk( _lock , false ); return _chunkMap.size(); }
         bool hasShardKey( const BSONObj& obj );
 
         ChunkPtr findChunk( const BSONObj& obj , bool retry = false );
@@ -310,17 +352,21 @@ namespace mongo {
         void _reload();
         void _reload_inlock();
         void _load();
+
+        void save_inlock();
+        ShardChunkVersion getVersion_inlock() const;
         
         DBConfig * _config;
         string _ns;
         ShardKeyPattern _key;
         bool _unique;
         
-        vector<ChunkPtr> _chunks;
         map<string,unsigned long long> _maxMarkers;
 
         ChunkMap _chunkMap;
         ChunkRangeManager _chunkRanges;
+
+        set<Shard> _shards;
 
         unsigned long long _sequenceNumber;
         
@@ -366,5 +412,6 @@ namespace mongo {
     };
 
 
+    inline string Chunk::genID(){ return genID(_manager->getns(), _min); }
 
 } // namespace mongo

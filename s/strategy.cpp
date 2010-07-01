@@ -83,7 +83,7 @@ namespace mongo {
         
         void run(){
             int secsToSleep = 0;
-            while ( 1 ){
+            while ( Shard::isMember( _addr ) ){
                 try {
                     ScopedDbConnection conn( _addr );
                     
@@ -125,6 +125,9 @@ namespace mongo {
                 }
                 catch ( std::exception e ){
                     log() << "WriteBackListener exception : " << e.what() << endl;
+
+                    // It's possible this shard was removed
+                    Shard::reloadShardInfo();                    
                 }
                 catch ( ... ){
                     log() << "WriteBackListener uncaught exception!" << endl;
@@ -134,6 +137,9 @@ namespace mongo {
                 if ( secsToSleep > 10 )
                     secsToSleep = 0;
             }
+
+            log() << "WriteBackListener exiting : address no longer in cluster " << _addr;
+
         }
         
     private:
@@ -213,11 +219,10 @@ namespace mongo {
     }
     
     bool setShardVersion( DBClientBase & conn , const string& ns , ShardChunkVersion version , bool authoritative , BSONObj& result ){
-
         BSONObjBuilder cmdBuilder;
         cmdBuilder.append( "setShardVersion" , ns.c_str() );
         cmdBuilder.append( "configdb" , configServer.modelServer() );
-        cmdBuilder.appendTimestamp( "version" , version );
+        cmdBuilder.appendTimestamp( "version" , version.toLong() );
         cmdBuilder.appendOID( "serverID" , &serverID );
         if ( authoritative )
             cmdBuilder.appendBool( "authoritative" , 1 );
@@ -240,8 +245,10 @@ namespace mongo {
     }
 
     bool lockNamespaceOnServer( DBClientBase& conn , const string& ns ){
-        BSONObj lockResult;
-        return setShardVersion( conn , ns , grid.getNextOpTime() , true , lockResult );
+        // TODO: replace this
+        //BSONObj lockResult;
+        //return setShardVersion( conn , ns , grid.getNextOpTime() , true , lockResult );
+        return true;
     }
 
     

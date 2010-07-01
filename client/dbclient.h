@@ -81,6 +81,86 @@ namespace mongo {
         UpdateOption_Multi = 1 << 1
     };
 
+    class DBClientBase;
+
+    class ConnectionString {
+    public:
+        enum ConnectionType { MASTER , SET , SYNC };
+        
+        ConnectionString( const HostAndPort& server ){
+            _type = MASTER;
+            _servers.push_back( server );
+            _finishInit();
+        }
+
+        ConnectionString( ConnectionType type , const vector<HostAndPort>& servers )
+            : _type( type ) , _servers( servers ){
+            _finishInit();
+        }
+        
+        ConnectionString( ConnectionType type , const string& s ){
+            _type = type;
+            _fillServers( s );
+            
+            switch ( _type ){
+            case MASTER:
+                assert( _servers.size() == 1 );
+                break;
+            default:
+                assert( _servers.size() > 0 );
+            }
+            
+            _finishInit();
+        }
+
+        ConnectionString( const string& s , ConnectionType favoredMultipleType ){
+            _fillServers( s );
+            if ( _servers.size() == 1 ){
+                _type = MASTER;
+            }
+            else {
+                _type = favoredMultipleType;
+                assert( _type != MASTER );
+            }
+            _finishInit();
+        }
+        
+        string toString() const {
+            return _string;
+        }
+        
+        operator string() const {
+            return toString();
+        }
+        
+        DBClientBase* connect( string& errmsg ) const;
+
+    private:
+        
+        void _fillServers( string s ){
+            string::size_type idx;
+            while ( ( idx = s.find( ',' ) ) != string::npos ){
+                _servers.push_back( s.substr( 0 , idx ) );
+                s = s.substr( idx + 1 );
+            }
+            _servers.push_back( s );
+        }
+        
+        void _finishInit(){
+            stringstream ss;
+            for ( unsigned i=0; i<_servers.size(); i++ ){
+                if ( i > 0 )
+                    ss << ",";
+                ss << _servers[i].toString();
+            }
+            _string = ss.str();
+        }
+
+        ConnectionType _type;
+        vector<HostAndPort> _servers;
+        string _string;
+    };
+
     /**
      * controls how much a clients cares about writes
      * default is NORMAL
@@ -833,6 +913,8 @@ namespace mongo {
             return left.getServerAddress() + "," + right.getServerAddress();
         }
         
+        
+        DBClientConnection& masterConn();
         DBClientConnection& slaveConn();
 
         /* TODO - not yet implemented. mongos may need these. */

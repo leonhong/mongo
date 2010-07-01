@@ -45,7 +45,6 @@ namespace mongo {
 
     static void _logOpRS(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb ) {
         DEV assertInWriteLock();
-        DEV assert( theReplSet );
         static BufBuilder bufbuilder(8*1024);
         
         if ( strncmp(ns, "local.", 6) == 0 ){
@@ -56,16 +55,25 @@ namespace mongo {
 
         const OpTime ts = OpTime::now();
 
+        long long hNew;
+        if( theReplSet ) { 
+            massert(13312, "replSet error : logOp() but not primary?", theReplSet->isPrimary());
+            hNew = (theReplSet->h * 131 + ts.asLL()) * 17 + theReplSet->selfId();
+        }
+        else { 
+            // must be initiation
+            assert( *ns == 0 );
+            hNew = 0;
+        }
+
         /* we jump through a bunch of hoops here to avoid copying the obj buffer twice --
            instead we do a single copy to the destination position in the memory mapped file.
         */
 
         bufbuilder.reset();
         BSONObjBuilder b(bufbuilder);
-        massert(13312, "replSet error : logOp() but not primary?", theReplSet->isPrimary());
 
         b.appendTimestamp("ts", ts.asDate());
-        long long hNew = (theReplSet->h * 131 + ts.asLL()) * 17 + theReplSet->selfId();
         b.append("h", hNew);
 
         b.append("op", opstr);
@@ -90,14 +98,16 @@ namespace mongo {
                 assert( rsOplogDetails );
             }
             Client::Context ctx( "" , localDB, false );
-            r = theDataFileMgr.fast_oplog_insert(localOplogMainDetails, logns, len);
+            r = theDataFileMgr.fast_oplog_insert(rsOplogDetails, logns, len);
             /* todo: now() has code to handle clock skew.  but if the skew server to server is large it will get unhappy.
                      this code (or code in now() maybe) should be improved.
                      */
-            massert(13324, "rs error possible failover clock skew issue?", theReplSet->lastOpTimeWritten < ts);
-            theReplSet->lastOpTimeWritten = ts;
-            theReplSet->h = hNew;
-            ctx.getClient()->setLastOp( ts.asDate() );
+            if( theReplSet ) {
+                massert(13324, "rs error possible failover clock skew issue?", theReplSet->lastOpTimeWritten < ts);
+                theReplSet->lastOpTimeWritten = ts;
+                theReplSet->h = hNew;
+                ctx.getClient()->setLastOp( ts.asDate() );
+            }
         }
 
         char *p = r->data;
@@ -216,7 +226,17 @@ namespace mongo {
     void logOpComment(const BSONObj& obj) {
         _logOp("n", "", 0, obj, 0, 0);
     }
+    void logOpInitiate(const BSONObj& obj) {
+        _logOpRS("n", "", 0, obj, 0, 0);
+    }
 
+    /*@ @param opstr:
+          c userCreateNS
+          i insert
+          n no-op / keepalive
+          d delete / remove
+          u update
+    */
     void logOp(const char *opstr, const char *ns, const BSONObj& obj, BSONObj *patt, bool *b) {
         if ( replSettings.master ) {
             _logOp(opstr, ns, 0, obj, patt, b);
@@ -238,9 +258,15 @@ namespace mongo {
         dblock lk;
 
         const char * ns = "local.oplog.$main";
+
+        bool rs = !cmdLine.replSet.empty();
+        if( rs )
+            ns = rsoplog.c_str();
+
         Client::Context ctx(ns);
         
         NamespaceDetails * nsd = nsdetails( ns );
+
         if ( nsd ) {
             
             if ( cmdLine.oplogSize != 0 ){
@@ -253,6 +279,8 @@ namespace mongo {
                     throw UserException( 13257 , ss.str() );
                 }
             }
+
+            if( rs ) return;
 
             DBDirectClient c;
             BSONObj lastOp = c.findOne( ns, Query().sort( BSON( "$natural" << -1 ) ) );
@@ -295,7 +323,8 @@ namespace mongo {
         string err;
         BSONObj o = b.done();
         userCreateNS(ns, o, err, false);
-        logOp( "n", "dummy", BSONObj() );
+        if( !rs )
+            logOp( "n", "dummy", BSONObj() );
     }
 
     class CmdLogCollection : public Command {
@@ -365,5 +394,168 @@ namespace mongo {
             assert( !(q != t) );
         }
     } testoptime;
+
+    void pretouchOperation(const BSONObj& op) {
+        if( dbMutex.isWriteLocked() )
+            return; // no point pretouching if write locked. not sure if this will ever fire, but just in case.
+
+        const char *which = "o";
+        const char *opType = op.getStringField("op");
+        if ( *opType == 'i' )
+            ;
+        else if( *opType == 'u' )
+            which = "o2";
+        else
+            return;
+        /* todo : other operations */
+
+        try { 
+            BSONObj o = op.getObjectField(which);
+            BSONElement _id;
+            if( o.getObjectID(_id) ) {
+                const char *ns = op.getStringField("ns");
+                BSONObjBuilder b;
+                b.append(_id);
+                BSONObj result;
+                readlock lk(ns);
+                Client::Context ctx( ns );
+                Helpers::findById(cc(), ns, b.done(), result);
+            }
+        }
+        catch( DBException& ) { 
+            log() << "ignoring assertion in pretouchOperation()" << endl;
+        }
+    }
+
+    void applyOperation_inlock(const BSONObj& op){
+        if( logLevel >= 6 ) 
+            log() << "applying op: " << op << endl;
+        
+        assertInWriteLock();
+
+        OpDebug debug;
+        BSONObj o = op.getObjectField("o");
+        const char *ns = op.getStringField("ns");
+        // operation type -- see logOp() comments for types
+        const char *opType = op.getStringField("op");
+
+        if ( *opType == 'i' ) {
+            const char *p = strchr(ns, '.');
+            if ( p && strcmp(p, ".system.indexes") == 0 ) {
+                // updates aren't allowed for indexes -- so we will do a regular insert. if index already
+                // exists, that is ok.
+                theDataFileMgr.insert(ns, (void*) o.objdata(), o.objsize());
+            }
+            else {
+                // do upserts for inserts as we might get replayed more than once
+                BSONElement _id;
+                if( !o.getObjectID(_id) ) {
+                    /* No _id.  This will be very slow. */
+                    Timer t;
+                    updateObjects(ns, o, o, true, false, false , debug );
+                    if( t.millis() >= 2 ) {
+                        RARELY OCCASIONALLY log() << "warning, repl doing slow updates (no _id field) for " << ns << endl;
+                    }
+                }
+                else {
+                    BSONObjBuilder b;
+                    b.append(_id);
+                    
+                    /* erh 10/16/2009 - this is probably not relevant any more since its auto-created, but not worth removing */
+                    RARELY ensureHaveIdIndex(ns); // otherwise updates will be slow 
+                    
+                    updateObjects(ns, o, b.done(), true, false, false , debug );
+                }
+            }
+        }
+        else if ( *opType == 'u' ) {
+            RARELY ensureHaveIdIndex(ns); // otherwise updates will be super slow
+            updateObjects(ns, o, op.getObjectField("o2"), op.getBoolField("b"), false, false , debug );
+        }
+        else if ( *opType == 'd' ) {
+            if ( opType[1] == 0 )
+                deleteObjects(ns, o, op.getBoolField("b"));
+            else
+                assert( opType[1] == 'b' ); // "db" advertisement
+        }
+        else if ( *opType == 'n' ) {
+            // no op
+        }
+        else if ( *opType == 'c' ){
+            BufBuilder bb;
+            BSONObjBuilder ob;
+            _runCommands(ns, o, bb, ob, true, 0);
+        }
+        else {
+            stringstream ss;
+            ss << "unknown opType [" << opType << "]";
+            throw MsgAssertionException( 13141 , ss.str() );
+        }
+        
+    }
+    
+    class ApplyOpsCmd : public Command {
+    public:
+        virtual bool slaveOk() const { return false; }
+        virtual LockType locktype() const { return WRITE; }
+        ApplyOpsCmd() : Command( "applyOps" ) {}
+        virtual void help( stringstream &help ) const {
+            help << "examples: { applyOps : [ ] , preCondition : [ { ns : ... , q : ... , res : ... } ] }";
+        }
+        virtual bool run(const string& dbname, BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool fromRepl) {
+            
+            if ( cmdObj.firstElement().type() != Array ){
+                errmsg = "ops has to be an array";
+                return false;
+            }
+            
+            BSONObj ops = cmdObj.firstElement().Obj();
+            
+            { // check input
+                BSONObjIterator i( ops );
+                while ( i.more() ){
+                    BSONElement e = i.next();
+                    if ( e.type() == Object )
+                        continue;
+                    errmsg = "op not an object: ";
+                    errmsg += e.fieldName();
+                    return false;
+                }
+            }
+            
+            if ( cmdObj["preCondition"].type() == Array ){
+                BSONObjIterator i( cmdObj["preCondition"].Obj() );
+                while ( i.more() ){
+                    BSONObj f = i.next().Obj();
+                    
+                    BSONObj realres = db.findOne( f["ns"].String() , f["q"].Obj() );
+                    
+                    Matcher m( f["res"].Obj() );
+                    if ( ! m.matches( realres ) ){
+                        result.append( "got" , realres );
+                        result.append( "whatFailed" , f );
+                        errmsg = "pre-condition failed";
+                        return false;
+                    }
+                }
+            }
+            
+            // apply
+            int num = 0;
+            BSONObjIterator i( ops );
+            while ( i.more() ){
+                BSONElement e = i.next();
+                applyOperation_inlock( e.Obj() );
+                num++;
+            }
+
+            result.append( "applied" , num );
+
+            return true;
+        }
+
+        DBDirectClient db;
+        
+    } applyOpsCmd;
 
 }

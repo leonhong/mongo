@@ -1,12 +1,13 @@
 // test --repairpath on aother partition
 
 var baseName = "jstests_disk_repair3";
-repairpath = "/data/db/repairpartitiontest"
+var repairbase = "/data/db/repairpartitiontest"
+var repairpath = repairbase + "/dir"
 
 doIt = false;
 files = listFiles( "/data/db" );
 for ( i in files ) {
-    if ( files[ i ].name == repairpath ) {
+    if ( files[ i ].name == repairbase ) {
         doIt = true;
     }
 }
@@ -15,7 +16,7 @@ for ( i in files ) {
 doIt = false;
 
 if ( !doIt ) {
-    print( "path /data/db/repairpartitiontest/ missing, skipping repair3 test" );
+    print( "path " + repairpath + " missing, skipping repair3 test" );
     doIt = false;
 }
 
@@ -27,7 +28,7 @@ if ( doIt ) {
     resetDbpath( dbpath );
     resetDbpath( repairpath );
 
-    m = startMongoProgram( "mongod", "--port", port, "--dbpath", dbpath, "--repairpath", repairpath, "--nohttpinterface", "--bind_ip", "127.0.0.1" );
+    m = startMongoProgram( "mongod", "--noprealloc", "--smallfiles", "--port", port, "--dbpath", dbpath, "--repairpath", repairpath, "--nohttpinterface", "--bind_ip", "127.0.0.1" );
     db = m.getDB( baseName );
     db[ baseName ].save( {} );
     assert.commandWorked( db.runCommand( {repairDatabase:1, backupOriginalFiles:true} ) );
@@ -44,9 +45,9 @@ if ( doIt ) {
     stopMongod( port );
 
     resetDbpath( repairpath );
-    rc = runMongoProgram( "mongod", "--repair", "--port", port, "--dbpath", dbpath, "--repairpath", repairpath, "--nohttpinterface", "--bind_ip", "127.0.0.1" );
+    rc = runMongoProgram( "mongod", "--noprealloc", "--smallfiles", "--repair", "--port", port, "--dbpath", dbpath, "--repairpath", repairpath, "--nohttpinterface", "--bind_ip", "127.0.0.1" );
     assert.eq.automsg( "0", "rc" );
-    m = startMongoProgram( "mongod", "--port", port, "--dbpath", dbpath, "--repairpath", repairpath, "--nohttpinterface", "--bind_ip", "127.0.0.1" );
+    m = startMongoProgram( "mongod", "--noprealloc", "--smallfiles", "--port", port, "--dbpath", dbpath, "--repairpath", repairpath, "--nohttpinterface", "--bind_ip", "127.0.0.1" );
     db = m.getDB( baseName );
     check();
     stopMongod( port );

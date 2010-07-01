@@ -130,7 +130,7 @@ namespace mongo {
         return insertFile((remoteName.empty() ? fileName : remoteName), id, length, contentType);
     }
 
-    BSONObj GridFS::insertFile(const string& name, const OID& id, unsigned length, const string& contentType){
+    BSONObj GridFS::insertFile(const string& name, const OID& id, gridfs_offset length, const string& contentType){
 
         BSONObj res;
         if ( ! _client.runCommand( _dbName.c_str() , BSON( "filemd5" << id << "root" << _prefix ) , res ) )
@@ -139,11 +139,16 @@ namespace mongo {
         BSONObjBuilder file;
         file << "_id" << id
              << "filename" << name
-             << "length" << (unsigned) length
              << "chunkSize" << _chunkSize
              << "uploadDate" << DATENOW
              << "md5" << res["md5"]
              ;
+
+        if (length < 1024*1024*1024){ // 2^30
+            file << "length" << (int) length;
+        }else{
+            file << "length" << (long long) length;
+        }
 
         if (!contentType.empty())
             file << "contentType" << contentType;
@@ -227,6 +232,7 @@ namespace mongo {
             return write( cout );
         } else {
             ofstream out(where.c_str() , ios::out | ios::binary );
+            uassert(13325, "couldn't open file: " + where, out.is_open() );
             return write( out );
         }
     }

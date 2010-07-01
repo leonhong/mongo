@@ -162,8 +162,9 @@ namespace mongo {
                 b.append( ss.str() );
                 const char *s = b.buf();
                 
+                string threadName = getThreadName();
                 const char * type = logLevelToString(logLevel);
-
+                
                 scoped_lock lk(mutex);
                 
                 if( t ) t->write(logLevel,s);
@@ -171,8 +172,12 @@ namespace mongo {
 #ifndef _WIN32
                 //syslog( LOG_INFO , "%s" , cc );
 #endif
-                
-                cout << type << ( type[0] ? ": " : "" ) << s;
+
+                if ( ! threadName.empty() ){
+                    cout << threadName << " ";
+                }
+                cout << type << ( type[0] ? ": " : "" );
+                cout << s;
                 cout.flush();
             }
             _init();
