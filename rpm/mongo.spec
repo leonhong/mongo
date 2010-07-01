@@ -11,9 +11,8 @@ Source1: mongod.conf
 Source2: init.d-mongod
 Source3: mongod.sysconfig
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
-BuildRequires: js-devel, readline-devel, boost-devel, pcre-devel
+BuildRequires: js-devel, readline-devel, boost-devel, pcre-devel, scons
 BuildRequires: gcc-c++, scons, libstdc++-devel, ncurses-devel
-Requires: js, boost, pcre, readline, libstdc++, readline, ncurses
 
 %description
 Mongo (from "huMONGOus") is a schema-free document-oriented database.
@@ -51,23 +50,24 @@ to develop mongo client software.
 %build
 [ "%{buildroot}" != "/" ] && %{__rm} -rf %{buildroot}
 
-scons all
+scons all %{?_smp_mflags}
 # XXX really should have shared library here
 
 %install
-scons --prefix=%{buildroot}/%{_prefix} install
+# %{?_smp_mflags} should work for scons as well
+scons --prefix=%{buildroot}/%{_prefix} install %{?_smp_mflags}
 
 %{__mkdir_p} %{buildroot}/%{_datadir}/man/man1
 %{__mkdir_p} %{buildroot}/%{_initrddir}
 %{__mkdir_p} %{buildroot}/%{_sysconfdir}/sysconfig
-%{__mkdir_p} %{buildroot}/%{_sysconfdir}/mongo
 %{__mkdir_p} %{buildroot}/%{_var}/lib/mongo
 %{__mkdir_p} %{buildroot}/%{_var}/log/mongo
 
-%{__cp} %{_sourcedir}/debian/*.1 %{buildroot}/%{_datadir}/man/man1/
-%{__cp} %{_sourcedir}/rpm/init.d-mongod %{buildroot}/%{_initrddir}/mongod
-%{__cp} %{_sourcedir}/rpm/mongod.conf %{buildroot}/%{_sysconfdir}/mongo/mongod.conf
-%{__cp} %{_sourcedir}/rpm/mongod.sysconfig %{buildroot}/%{_sysconfdir}/sysconfig/mongod
+%{__cp} %{_builddir}/mongodb-src-r%{version}/debian/*.1 %{buildroot}/%{_datadir}/man/man1/
+
+%{__cp} %{_sourcedir}/init.d-mongod %{buildroot}/%{_initrddir}/mongod
+%{__cp} %{_sourcedir}/mongod.conf %{buildroot}/%{_sysconfdir}/mongod.conf
+%{__cp} %{_sourcedir}/mongod.sysconfig %{buildroot}/%{_sysconfdir}/sysconfig/mongod
 
 %clean
 # scons -c
@@ -125,8 +125,7 @@ fi
 %files server
 %defattr(-,root,root,-)
 
-%dir %{_sysconfdir}/mongo
-%config(noreplace) %{_sysconfdir}/mongo/mongod.conf
+%config(noreplace) %{_sysconfdir}/mongod.conf
 
 %attr(0755,root,root) %{_bindir}/mongod
 %attr(0755,root,root) %{_bindir}/mongos
@@ -139,11 +138,15 @@ fi
 %attr(0750,mongod,mongod) %dir %{_var}/log/mongo
 
 %files devel
-%{_includedir}/mongo
+#%{_includedir}/mongo
 %{_libdir}/libmongoclient.a
 #%{_libdir}/libmongotestfiles.a
 
 %changelog
+* Thu Jul 1 2010 Mikko Koppanen <mikko@ibuildings.com>
+- Use _smp_mflags for scons
+- Reverted the config file location back to /etc/mongod.conf
+
 * Tue Jun 29 2010 Mikko Koppanen <mikko@ibuildings.com>
 - Use macros for commands and directories
 - Add missing source files

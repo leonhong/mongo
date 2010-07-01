@@ -14,23 +14,13 @@
 
 # Default options
 mongod=${MONGOD-/usr/bin/mongod}
-OPTIONS="-f /etc/mongo/mongod.conf"
+OPTIONS="-f /etc/mongod.conf"
 NFILES=12000
 
 # Source sysconfig if it is present
 if [ -f /etc/sysconfig/mongod ]; then
    . /etc/sysconfig/mongod
 fi
-
-check_old_conf() {
-  if [ -f /etc/mongod.conf ]; then
-    echo "*** NOTICE ***"
-    echo "Found configuration file in /etc/mongod.conf"
-    echo "The default location in the current package is /etc/mongo/mongod.conf"
-    echo "Please copy the configuration into the new location"
-    RETVAL=1
-  fi
-}
 
 start()
 {
@@ -74,11 +64,8 @@ case "$1" in
     status -p $PIDFILE $mongod
 	  RETVAL=$?
     ;;
-  configtest)
-    check_old_conf
-    ;;
   *)
-    echo "Usage: $0 {start|stop|status|restart|reload|force-reload|condrestart|configtest}"
+    echo "Usage: $0 {start|stop|status|restart|reload|force-reload|condrestart}"
     RETVAL=1
 esac
 
