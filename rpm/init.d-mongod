@@ -8,9 +8,8 @@
 # config: /etc/mongod.conf
 # pidfile: /var/run/mongo/mongo.pid
 
+# System functions
 . /etc/rc.d/init.d/functions
-
-# things from mongod.conf get there by mongod reading it
 
 # Default options
 mongod=${MONGOD-/usr/bin/mongod}

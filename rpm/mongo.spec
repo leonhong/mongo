@@ -70,8 +70,8 @@ scons --prefix=%{buildroot}/%{_prefix} install %{?_smp_mflags}
 %{__cp} %{_sourcedir}/mongod.sysconfig %{buildroot}/%{_sysconfdir}/sysconfig/mongod
 
 %clean
-# scons -c
-# [ "%{buildroot}" != "/" ] && %{__rm} -rf %{buildroot}
+scons -c
+[ "%{buildroot}" != "/" ] && %{__rm} -rf %{buildroot}
 
 %pre server
 if ! /usr/bin/id -g mongod &>/dev/null; then
